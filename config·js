@@ -8,10 +8,10 @@ export const firebaseConfig = {
   appId: "1:807747162726:web:d8455d08e1da6069d453a7"
 };
 
-export const CLOUD_NAME = "YOUR_CLOUD_NAME";
-export const UPLOAD_PRESET = "YOUR_UNSIGNED_PRESET";
+export const CLOUD_NAME = "trd4esoa";
+export const UPLOAD_PRESET = "ropubd";
 
 // এই ইমেইলগুলো admin হবে (firestore.rules এও একই ইমেইল দিতে হবে)
 export const ADMIN_EMAILS = ["your-admin@gmail.com"];
 
-export const SITE_NAME = "CSM Store";
+export const SITE_NAME = "CSM Storem";
