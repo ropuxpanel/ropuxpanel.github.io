@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header><h1>⚙ Admin Panel</h1><div id="userBox"></div></header>
+<div class="wrap">
+
+<div id="loginView" class="box"><p>Admin Google account দিয়ে login করো।</p><br><button class="btn" id="loginBtn">Google Login</button></div>
+<div id="denied" class="box hide">❌ এই account admin না।</div>
+
+<div id="panel" class="hide">
+  <div class="tabs">
+    <button class="btn ghost active" data-t="orders">💰 Orders</button>
+    <button class="btn ghost" data-t="upload">⬆ নতুন ফাইল</button>
+    <button class="btn ghost" data-t="files">📦 ফাইল লিস্ট</button>
+    <button class="btn ghost" data-t="settings">🛠 Settings</button>
+  </div>
+
+  <!-- ORDERS -->
+  <div class="box" id="t-orders">
+    <div class="row" style="margin-bottom:10px">
+      <select id="ofilter"><option value="pending">Pending</option><option value="all">সব</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+    </div>
+    <div style="overflow-x:auto"><table><thead><tr><th>User</th><th>ফাইল</th><th>Payment</th><th>Status</th><th></th></tr></thead><tbody id="orders"></tbody></table></div>
+  </div>
+
+  <!-- UPLOAD -->
+  <div class="box hide" id="t-upload">
+    <h3 id="formTitle">নতুন ফাইল পাবলিশ</h3>
+    <label>নাম</label><input id="fName">
+    <div class="row">
+      <div><label>দাম (BDT)</label><input id="fPrice" type="number"></div>
+      <div><label>Version</label><input id="fVer" placeholder="1.0"></div>
+      <div><label>Category</label><input id="fCat" placeholder="App / Game / Template"></div>
+    </div>
+    <label>বিবরণ</label><textarea id="fDesc" rows="5"></textarea>
+    <label>মূল ফাইল (apk/zip/যেকোনো) — size অটো</label><input type="file" id="fFile">
+    <label>Icon</label><input type="file" id="fIcon" accept="image/*">
+    <label>Screenshots (একাধিক)</label><input type="file" id="fShots" accept="image/*" multiple>
+    <div class="bar hide" id="bar"><i></i></div>
+    <p class="meta" id="stat"></p><br>
+    <button class="btn ok" id="publish">🚀 Publish</button>
+  </div>
+
+  <!-- FILES -->
+  <div class="box hide" id="t-files"><div style="overflow-x:auto"><table><tbody id="files"></tbody></table></div></div>
+
+  <!-- SETTINGS -->
+  <div class="box hide" id="t-settings">
+    <label>সেল সম্পর্কিত তথ্য (হোমপেজে দেখাবে)</label><textarea id="sSell" rows="3"></textarea>
+    <label>About</label><textarea id="sAbout" rows="2"></textarea>
+    <div class="row">
+      <div><label>bKash নম্বর</label><input id="sBkash"></div>
+      <div><label>Nagad নম্বর</label><input id="sNagad"></div>
+    </div>
+    <div class="row">
+      <div><label>Facebook link</label><input id="sFb"></div>
+      <div><label>WhatsApp নম্বর</label><input id="sWa"></div>
+    </div>
+    <div class="row">
+      <div><label>Phone</label><input id="sPhone"></div>
+      <div><label>Email</label><input id="sEmail"></div>
+    </div>
+    <button class="btn" id="saveSet">Save</button>
+  </div>
+</div>
+</div>
+
+<script type="module">
+import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS } from "./config.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const toast = m => { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.append(t); setTimeout(() => t.remove(), 2800); };
+const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(2) + " MB" : (b / 1024).toFixed(1) + " KB";
+
+$("#loginBtn").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => toast(e.code));
+
+let started = false, allOrders = [];
+onAuthStateChanged(auth, u => {
+  $("#userBox").innerHTML = u ? `<span class="meta">${esc(u.email)}</span> <button class="btn ghost" id="out">Logout</button>` : "";
+  if ($("#out")) $("#out").onclick = () => signOut(auth);
+  $("#loginView").classList.toggle("hide", !!u);
+  const ok = u && ADMIN_EMAILS.includes(u.email);
+  $("#denied").classList.toggle("hide", !(u && !ok));
+  $("#panel").classList.toggle("hide", !ok);
+  if (ok && !started) { started = true; start(); }
+});
+
+// tabs
+document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
+  document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
+  ["orders", "upload", "files", "settings"].forEach(t => $("#t-" + t).classList.toggle("hide", t !== b.dataset.t));
+});
+
+function start() {
+  // orders
+  onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), s => {
+    allOrders = s.docs.map(d => ({ id: d.id, ...d.data() })); drawOrders();
+  });
+  $("#ofilter").onchange = drawOrders;
+  // files
+  onSnapshot(query(collection(db, "files"), orderBy("createdAt", "desc")), s => {
+    $("#files").innerHTML = s.docs.map(d => { const x = d.data(); return `<tr>
+      <td data-l="Icon"><img src="${esc(x.iconUrl)}" width="44" height="44" style="border-radius:12px;object-fit:cover"></td>
+      <td data-l="নাম"><span><b>${esc(x.name)}</b><br><span class="meta">${esc(x.sizeText)}</span></span></td>
+      <td data-l="দাম ৳"><input value="${esc(x.price)}" type="number" style="width:110px;margin:0" data-p="${d.id}"></td>
+      <td><button class="btn ghost" data-s="${d.id}">Save</button> <button class="btn bad" data-d="${d.id}">Delete</button></td></tr>`; }).join("");
+    document.querySelectorAll("[data-s]").forEach(b => b.onclick = async () => {
+      await updateDoc(doc(db, "files", b.dataset.s), { price: Number(document.querySelector(`[data-p="${b.dataset.s}"]`).value) }); toast("Updated");
+    });
+    document.querySelectorAll("[data-d]").forEach(b => b.onclick = async () => {
+      if (!confirm("মুছে ফেলবে?")) return;
+      await deleteDoc(doc(db, "files", b.dataset.d, "secret", "data")).catch(() => {});
+      await deleteDoc(doc(db, "files", b.dataset.d)); toast("Deleted");
+    });
+  });
+  // settings
+  getDoc(doc(db, "settings", "site")).then(s => {
+    const d = s.data() || {};
+    $("#sSell").value = d.sellInfo || ""; $("#sAbout").value = d.about || "";
+    $("#sBkash").value = d.bkash || ""; $("#sNagad").value = d.nagad || "";
+    $("#sFb").value = d.facebook || ""; $("#sWa").value = d.whatsapp || "";
+    $("#sPhone").value = d.phone || ""; $("#sEmail").value = d.email || "";
+  });
+}
+
+function drawOrders() {
+  const f = $("#ofilter").value;
+  const list = allOrders.filter(o => f === "all" || o.status === f);
+  $("#orders").innerHTML = list.map(o => `<tr>
+    <td data-l="User"><span>${esc(o.userName)}<br><span class="meta">${esc(o.email)}</span></span></td>
+    <td data-l="ফাইল"><span>${esc(o.fileName)}<br><b>৳${esc(o.price)}</b></span></td>
+    <td data-l="Payment"><span>${esc(o.method)}<br>TrxID: <b>${esc(o.trxId)}</b><br><span class="meta">From: ${esc(o.senderNumber)}</span></span></td>
+    <td data-l="Status"><span><span class="badge b-${o.status}">${o.status}</span>${o.reason ? `<br><span class="meta">${esc(o.reason)}</span>` : ""}</span></td>
+    <td>${o.status === "pending" ? `<button class="btn ok" data-a="${o.id}">Approve</button> <button class="btn bad" data-r="${o.id}">Reject</button>` : ""}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="meta">কিছু নেই</td></tr>`;
+  document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => updateDoc(doc(db, "orders", b.dataset.a), { status: "approved", reason: "" }).then(() => toast("Approved")));
+  document.querySelectorAll("[data-r]").forEach(b => b.onclick = () => {
+    const r = prompt("Reject এর কারণ:", "Transaction ID ভুল / টাকা পাইনি"); if (r === null) return;
+    updateDoc(doc(db, "orders", b.dataset.r), { status: "rejected", reason: r }).then(() => toast("Rejected"));
+  });
+}
+
+// ---- Cloudinary upload ----
+function upload(file, onP) {
+  return new Promise((res, rej) => {
+    const fd = new FormData(); fd.append("file", file); fd.append("upload_preset", UPLOAD_PRESET);
+    const x = new XMLHttpRequest();
+    x.open("POST", `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`);
+    x.upload.onprogress = e => e.lengthComputable && onP && onP(e.loaded / e.total);
+    x.onload = () => { const j = JSON.parse(x.responseText); x.status < 300 ? res(j) : rej(new Error(j.error?.message || "upload failed")); };
+    x.onerror = () => rej(new Error("network error"));
+    x.send(fd);
+  });
+}
+
+$("#publish").onclick = async () => {
+  const name = $("#fName").value.trim(), price = Number($("#fPrice").value);
+  const file = $("#fFile").files[0], icon = $("#fIcon").files[0], shots = [...$("#fShots").files];
+  if (!name || !price || !file || !icon) return toast("নাম, দাম, ফাইল ও icon লাগবেই");
+  const btn = $("#publish"); btn.disabled = true; $("#bar").classList.remove("hide");
+  const setBar = p => $("#bar i").style.width = (p * 100) + "%";
+  try {
+    $("#stat").textContent = "Icon আপলোড...";
+    const ic = await upload(icon);
+    const sh = [];
+    for (let i = 0; i < shots.length; i++) { $("#stat").textContent = `Screenshot ${i + 1}/${shots.length}...`; sh.push((await upload(shots[i])).secure_url); }
+    $("#stat").textContent = "মূল ফাইল আপলোড...";
+    const mf = await upload(file, setBar);
+    const ref = await addDoc(collection(db, "files"), {
+      name, price, description: $("#fDesc").value, version: $("#fVer").value.trim(), category: $("#fCat").value.trim(),
+      size: file.size, sizeText: fmtSize(file.size), iconUrl: ic.secure_url, screenshots: sh, createdAt: serverTimestamp()
+    });
+    await setDoc(doc(db, "files", ref.id, "secret", "data"), { url: mf.secure_url, publicId: mf.public_id });
+    toast("Publish হয়েছে ✔"); $("#stat").textContent = "";
+    ["fName", "fPrice", "fVer", "fCat", "fDesc", "fFile", "fIcon", "fShots"].forEach(i => $("#" + i).value = "");
+  } catch (e) { toast("Error: " + e.message); $("#stat").textContent = "❌ " + e.message; }
+  btn.disabled = false; setBar(0); $("#bar").classList.add("hide");
+};
+
+$("#saveSet").onclick = async () => {
+  await setDoc(doc(db, "settings", "site"), {
+    sellInfo: $("#sSell").value, about: $("#sAbout").value, bkash: $("#sBkash").value.trim(), nagad: $("#sNagad").value.trim(),
+    facebook: $("#sFb").value.trim(), whatsapp: $("#sWa").value.trim(), phone: $("#sPhone").value.trim(), email: $("#sEmail").value.trim()
+  }); toast("Saved ✔");
+};
+</script>
+</body>
+</html>

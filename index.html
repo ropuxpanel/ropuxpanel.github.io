@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CSM Store</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1 id="siteName"><a href="index.html" style="color:inherit">CSM Store</a></h1>
+  <div id="userBox"><button class="btn" id="loginBtn">Google দিয়ে Sign in</button></div>
+</header>
+
+<div class="wrap" id="app">লোড হচ্ছে...</div>
+
+<footer id="contact"></footer>
+
+<script type="module">
+import { firebaseConfig, SITE_NAME } from "./config.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app), db = getFirestore(app);
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+const toast = m => { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.append(t); setTimeout(() => t.remove(), 2800); };
+const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "app";
+
+$("#siteName").innerHTML = `<a href="index.html" style="color:inherit">${esc(SITE_NAME)}</a>`;
+document.title = SITE_NAME;
+
+let user = null, settings = {}, current = null;
+
+$("#loginBtn").onclick = login;
+async function login() {
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); } catch (e) { toast("Login হয়নি: " + e.code); }
+}
+onAuthStateChanged(auth, u => {
+  user = u;
+  $("#userBox").innerHTML = u
+    ? `<span class="meta">${esc(u.displayName)}</span> <button class="btn ghost" id="outBtn">Logout</button>`
+    : `<button class="btn" id="loginBtn2">Google দিয়ে Sign in</button>`;
+  if ($("#outBtn")) $("#outBtn").onclick = () => signOut(auth);
+  if ($("#loginBtn2")) $("#loginBtn2").onclick = login;
+  if (current) renderDetail(current);
+});
+
+async function boot() {
+  try { const s = await getDoc(doc(db, "settings", "site")); settings = s.exists() ? s.data() : {}; } catch {}
+  renderContact();
+  const p = new URLSearchParams(location.search).get("app");
+  if (p) {
+    const id = p.split("-").pop();
+    const d = await getDoc(doc(db, "files", id));
+    if (!d.exists()) { $("#app").innerHTML = `<div class="box">ফাইল পাওয়া যায়নি। <a href="index.html">হোমে যাও</a></div>`; return; }
+    current = { id, ...d.data() };
+    renderDetail(current);
+  } else renderHome();
+}
+
+function renderContact() {
+  const s = settings, L = [];
+  if (s.about) L.push(`<p>${esc(s.about)}</p>`);
+  const links = [];
+  if (s.facebook) links.push(`<a href="${esc(s.facebook)}" target="_blank">Facebook</a>`);
+  if (s.whatsapp) links.push(`<a href="https://wa.me/${esc(String(s.whatsapp).replace(/\D/g, ""))}" target="_blank">WhatsApp</a>`);
+  if (s.phone) links.push(`<a href="tel:${esc(s.phone)}">📞 ${esc(s.phone)}</a>`);
+  if (s.email) links.push(`<a href="mailto:${esc(s.email)}">✉ ${esc(s.email)}</a>`);
+  L.push(`<div class="links">${links.join("")}</div>`);
+  L.push(`<p class="meta" style="margin-top:18px">© ${new Date().getFullYear()} ${esc(SITE_NAME)}</p>`);
+  $("#contact").innerHTML = L.join("");
+}
+
+async function renderHome() {
+  $("#app").innerHTML = `
+    <section class="hero">
+      <h2>প্রিমিয়াম <span>অ্যাপ ও ফাইল</span><br>এক জায়গায়</h2>
+      <p>${esc(settings.sellInfo || "পছন্দের ফাইল বেছে নাও, bKash / Nagad এ পেমেন্ট করো, ভেরিফাই হলেই ডাউনলোড।")}</p>
+      <div class="search"><input id="q" placeholder="ফাইল খুঁজুন..."></div>
+    </section>
+    <div class="grid">${'<div class="sk"></div>'.repeat(6)}</div>`;
+  const snap = await getDocs(query(collection(db, "files"), orderBy("createdAt", "desc")));
+  const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  $("#app").querySelector(".grid").outerHTML = `<div class="grid" id="grid"></div>`;
+  const draw = t => {
+    const list = items.filter(x => x.name.toLowerCase().includes(t.toLowerCase()));
+    $("#grid").innerHTML = list.length ? list.map((x, i) => `
+      <div class="card" style="animation-delay:${i * 50}ms" onclick="location.href='?app=${slug(x.name)}-${x.id}'">
+        <img src="${esc(x.iconUrl)}" alt="" loading="lazy">
+        <h3>${esc(x.name)}</h3>
+        <div class="foot"><span class="price">৳${esc(x.price)}</span><span class="chip">${esc(x.sizeText)}</span></div>
+      </div>`).join("") : `<p class="meta" style="grid-column:1/-1;text-align:center;padding:30px">কোনো ফাইল পাওয়া যায়নি</p>`;
+  };
+  draw("");
+  $("#q").oninput = e => draw(e.target.value);
+}
+
+async function renderDetail(f) {
+  window.scrollTo(0, 0);
+  $("#app").innerHTML = `
+    <a class="back" href="index.html">← সব ফাইল</a>
+    <div class="detail">
+      <div>
+        <div class="box" style="margin-top:8px">
+          <div class="dhead">
+            <img src="${esc(f.iconUrl)}" alt="">
+            <div>
+              <h2>${esc(f.name)}</h2>
+              <div class="dprice">৳${esc(f.price)}</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <span class="chip">📦 ${esc(f.sizeText)}</span>
+                ${f.version ? `<span class="chip">v${esc(f.version)}</span>` : ""}
+                ${f.category ? `<span class="chip">${esc(f.category)}</span>` : ""}
+              </div>
+            </div>
+          </div>
+        </div>
+        ${(f.screenshots || []).length ? `<div class="box"><h3>Screenshots</h3><div class="shots">${f.screenshots.map(u => `<img src="${esc(u)}" loading="lazy">`).join("")}</div></div>` : ""}
+        <div class="box"><h3>বিবরণ</h3><p style="white-space:pre-wrap;color:var(--mut)">${esc(f.description)}</p></div>
+      </div>
+      <div class="side"><div class="box" id="buyBox" style="margin-top:8px"></div></div>
+    </div>`;
+  document.querySelectorAll(".shots img").forEach(im => im.onclick = () => {
+    const lb = document.createElement("div"); lb.className = "lightbox"; lb.innerHTML = `<img src="${im.src}">`;
+    lb.onclick = () => lb.remove(); document.body.append(lb);
+  });
+  renderBuy(f);
+}
+
+async function renderBuy(f) {
+  const box = $("#buyBox");
+  if (!user) {
+    box.innerHTML = `<h3>কিনতে চাও?</h3>
+      <ol class="steps"><li>Google দিয়ে Sign in করো</li><li>bKash / Nagad এ টাকা পাঠাও</li><li>Transaction ID দাও</li><li>Approve হলেই ডাউনলোড</li></ol>
+      <button class="btn ok big" id="buyBtn">🛒 Buy it — ৳${esc(f.price)}</button>`;
+    $("#buyBtn").onclick = login; return;
+  }
+  box.innerHTML = "চেক করা হচ্ছে...";
+  const oid = `${user.uid}_${f.id}`;
+  const od = await getDoc(doc(db, "orders", oid));
+  const o = od.exists() ? od.data() : null;
+
+  if (o && o.status === "approved") {
+    let url = "";
+    try { const s = await getDoc(doc(db, "files", f.id, "secret", "data")); url = s.data().url; } catch {}
+    box.innerHTML = `<span class="badge b-approved">Approved ✔</span>
+      <p style="margin:10px 0">পেমেন্ট ভেরিফাইড! ডাউনলোড করো:</p>
+      <a class="btn ok big" href="${esc(url)}" target="_blank" download>⬇ Download</a>`;
+    return;
+  }
+  if (o && o.status === "pending") {
+    box.innerHTML = `<span class="badge b-pending">Pending</span>
+      <p style="margin-top:10px">তোমার TrxID <b>${esc(o.trxId)}</b> যাচাই চলছে। Admin approve করলে এখানেই ডাউনলোড বাটন আসবে।</p>`;
+    return;
+  }
+  const rej = o && o.status === "rejected"
+    ? `<p><span class="badge b-rejected">Rejected</span> ${esc(o.reason || "")} — সঠিক তথ্য দিয়ে আবার সাবমিট করো।</p>` : "";
+  const bk = settings.bkash || "—", ng = settings.nagad || "—";
+  box.innerHTML = `${rej}
+    <h3>পেমেন্ট করো — ৳${esc(f.price)}</h3>
+    <div class="pay" style="margin:12px 0">
+      <label><input type="radio" name="m" value="bKash" checked><span>bKash</span></label>
+      <label><input type="radio" name="m" value="Nagad"><span>Nagad</span></label>
+    </div>
+    <div id="payInfo" class="meta"></div>
+    <label>তোমার যে নম্বর থেকে পাঠিয়েছ</label>
+    <input id="sender" placeholder="01XXXXXXXXX" inputmode="numeric">
+    <label>Transaction ID (TrxID)</label>
+    <input id="trx" placeholder="যেমন: 8N7A6D5E4F">
+    <button class="btn ok big" id="sub">✔ Submit করো</button>`;
+  const info = () => {
+    const m = document.querySelector("input[name=m]:checked").value;
+    $("#payInfo").innerHTML = `${m} (Send Money / Personal) নম্বর: <b style="color:#fff;font-size:18px">${esc(m === "bKash" ? bk : ng)}</b><br>উপরের নম্বরে <b>৳${esc(f.price)}</b> পাঠাও, তারপর নিচে Transaction ID দাও।`;
+  };
+  document.querySelectorAll("input[name=m]").forEach(r => r.onchange = info); info();
+
+  $("#sub").onclick = async () => {
+    const trx = $("#trx").value.trim(), sender = $("#sender").value.trim();
+    if (trx.length < 6 || sender.length < 10) return toast("সব তথ্য ঠিকভাবে দাও");
+    $("#sub").disabled = true;
+    try {
+      await setDoc(doc(db, "orders", oid), {
+        uid: user.uid, email: user.email, userName: user.displayName || "",
+        fileId: f.id, fileName: f.name, price: f.price,
+        method: document.querySelector("input[name=m]:checked").value,
+        trxId: trx, senderNumber: sender, status: "pending", createdAt: serverTimestamp()
+      });
+      toast("সাবমিট হয়েছে"); renderBuy(f);
+    } catch (e) { toast("Error: " + e.code); $("#sub").disabled = false; }
+  };
+}
+
+boot();
+</script>
+</body>
+</html>
