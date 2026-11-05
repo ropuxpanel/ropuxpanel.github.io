@@ -1,11 +1,11 @@
 // ====== শুধু এই ফাইলটা এডিট করো ======
 export const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "000000000",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDUc0KskHxS9AfOe0fLJaj1InVeJ3kuc4E",
+  authDomain: "ropuxpanel.firebaseapp.com",
+  projectId: "ropuxpanel",
+  storageBucket: "ropuxpanel.firebasestorage.app",
+  messagingSenderId: "807747162726",
+  appId: "1:807747162726:web:d8455d08e1da6069d453a7"
 };
 
 export const CLOUD_NAME = "YOUR_CLOUD_NAME";
