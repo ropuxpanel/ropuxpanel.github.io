@@ -47,7 +47,20 @@
       <div><label>Category</label><input id="fCat" placeholder="App / Game / Template"></div>
     </div>
     <label>বিবরণ</label><textarea id="fDesc" rows="5"></textarea>
-    <label>মূল ফাইল (apk/zip/যেকোনো) — size অটো</label><input type="file" id="fFile">
+    <div class="box" style="margin:10px 0">
+      <b>📦 মূল ফাইলের ডাউনলোড লিংক</b>
+      <ol class="meta" style="margin:8px 0 8px 18px;line-height:1.8">
+        <li>নিচের বাটনে চেপে GitHub Releases খোলো, তারপর <b>Draft a new release</b> চাপো।</li>
+        <li><b>Choose a tag</b> এ যেকোনো নাম লিখো (যেমন <code>v1</code>, প্রতিবার আলাদা) → <b>Create new tag</b> চাপো।</li>
+        <li>নিচে <b>"Attach binaries by dropping them here"</b> এ ফাইল (apk/zip) দাও। আপলোড ১০০% হওয়া পর্যন্ত অপেক্ষা করো।</li>
+        <li><b>Publish release</b> চাপো।</li>
+        <li>Release পেজে <b>Assets</b> এ ফাইলের নামের উপর <b>চেপে ধরে → Copy link address</b> করো।</li>
+        <li>লিংকটা নিচের ঘরে paste করো। লিংক দেখতে: <code>.../releases/download/v1/ফাইল.zip</code></li>
+      </ol>
+      <a class="btn ghost" href="#" target="_blank" rel="noopener" id="relBtn">↗ GitHub Releases খুলুন</a>
+    </div>
+    <label>মূল ফাইলের লিংক (paste করো)</label><input id="fLink" placeholder="https://github.com/.../releases/download/v1/file.zip">
+    <label>ফাইলের সাইজ (অটো আসবে, না এলে লিখে দাও)</label><input id="fSize" placeholder="520 MB">
     <label>Icon</label><input type="file" id="fIcon" accept="image/*">
     <label>Screenshots (একাধিক)</label><input type="file" id="fShots" accept="image/*" multiple>
     <div class="bar hide" id="bar"><i></i></div>
@@ -94,7 +107,7 @@
 </div>
 
 <script type="module">
-import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS, NOTIFY_URL, GH_OWNER, GH_REPO } from "./config.js";
+import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS, NOTIFY_URL, RELEASES_URL } from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -103,6 +116,7 @@ const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestor
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 const toast = m => { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.append(t); setTimeout(() => t.remove(), 2800); };
+$("#relBtn").href = RELEASES_URL;
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(2) + " MB" : (b / 1024).toFixed(1) + " KB";
 
 $("#loginBtn").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => toast(e.code));
@@ -250,35 +264,35 @@ function upload(file, onP) {
     x.open("POST", `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`);
     x.upload.onprogress = e => e.lengthComputable && onP && onP(e.loaded / e.total);
     x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 ? res(j) : rej(new Error(j.error?.message || "upload failed")); };
-    x.onerror = () => rej(new Error("Cloudinary network error"));
+    x.onerror = () => rej(new Error("network error"));
     x.send(fd);
   });
 }
 
-// ---- GitHub Release upload (background, token browser এ থাকে) ----
-async function uploadGH(file, onP) {
-  let tk = localStorage.getItem("ghToken");
-  if (!tk) { tk = (prompt("GitHub token (Contents: write) দাও — শুধু এই browser এ থাকবে:") || "").trim(); if (!tk) throw new Error("GitHub token লাগবে"); localStorage.setItem("ghToken", tk); }
-  const H = { Authorization: "Bearer " + tk, Accept: "application/vnd.github+json" };
-  const id = crypto.randomUUID(), ext = (file.name.match(/\.[A-Za-z0-9]+$/) || [""])[0];
-  const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases`, { method: "POST", headers: H, body: JSON.stringify({ tag_name: "f-" + id, name: "f-" + id }) }).catch(() => { throw new Error("GitHub API network error"); });
-  const rel = await r.json();
-  if (!r.ok) { if (r.status === 401) localStorage.removeItem("ghToken"); throw new Error("GitHub: " + (rel.message || r.status)); }
-  return new Promise((res, rej) => {
-    const x = new XMLHttpRequest();
-    x.open("POST", `https://uploads.github.com/repos/${GH_OWNER}/${GH_REPO}/releases/${rel.id}/assets?name=${id}${ext}`);
-    x.setRequestHeader("Authorization", H.Authorization); x.setRequestHeader("Content-Type", "application/octet-stream");
-    x.upload.onprogress = e => e.lengthComputable && onP && onP(e.loaded / e.total);
-    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 ? res({ secure_url: j.browser_download_url, public_id: String(rel.id) }) : rej(new Error("GitHub: " + (j.message || x.status))); };
-    x.onerror = () => rej(new Error("GitHub upload network error (CORS/net)"));
-    x.send(file);
-  });
+// ---- লিংক থেকে GitHub asset এর সাইজ অটো আনা ----
+let linkBytes = 0;
+async function fetchSize(link) {
+  const m = link.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)\/releases\/download\/([^/]+)\/([^?#]+)/);
+  if (!m) return 0;
+  const r = await fetch(`https://api.github.com/repos/${m[1]}/${m[2]}/releases/tags/${m[3]}`, { headers: { Accept: "application/vnd.github+json" } });
+  if (!r.ok) return 0;
+  const name = decodeURIComponent(m[4]), as = (await r.json()).assets || [];
+  const a = as.find(x => x.name === name || x.browser_download_url === link.split(/[?#]/)[0]);
+  return a ? a.size : 0;
 }
+$("#fLink").addEventListener("input", async e => {
+  const v = e.target.value.trim(); linkBytes = 0; if (!v) return;
+  $("#fSize").placeholder = "সাইজ আনা হচ্ছে...";
+  try { linkBytes = await fetchSize(v); } catch {}
+  if (linkBytes) $("#fSize").value = fmtSize(linkBytes);
+  $("#fSize").placeholder = linkBytes ? "" : "অটো পাওয়া যায়নি, হাতে লিখো (যেমন 520 MB)";
+});
 
 $("#publish").onclick = async () => {
   const name = $("#fName").value.trim(), price = Number($("#fPrice").value);
-  const file = $("#fFile").files[0], icon = $("#fIcon").files[0], shots = [...$("#fShots").files];
-  if (!name || !price || !file || !icon) return toast("নাম, দাম, ফাইল ও icon লাগবেই");
+  const link = $("#fLink").value.trim(), sizeText = $("#fSize").value.trim(), icon = $("#fIcon").files[0], shots = [...$("#fShots").files];
+  if (!name || !price || !link || !icon) return toast("নাম, দাম, ফাইলের লিংক ও icon লাগবেই");
+  if (!/^https:\/\//.test(link)) return toast("লিংক https:// দিয়ে শুরু হতে হবে");
   const btn = $("#publish"); btn.disabled = true; $("#bar").classList.remove("hide");
   const setBar = p => $("#bar i").style.width = (p * 100) + "%";
   try {
@@ -286,15 +300,14 @@ $("#publish").onclick = async () => {
     const ic = await upload(icon);
     const sh = [];
     for (let i = 0; i < shots.length; i++) { $("#stat").textContent = `Screenshot ${i + 1}/${shots.length}...`; sh.push((await upload(shots[i])).secure_url); }
-    $("#stat").textContent = "মূল ফাইল আপলোড...";
-    const mf = await uploadGH(file, setBar);
+    const mf = { secure_url: link, public_id: "" };
     const ref = await addDoc(collection(db, "files"), {
       name, price, description: $("#fDesc").value, version: $("#fVer").value.trim(), category: $("#fCat").value.trim(),
-      size: file.size, sizeText: fmtSize(file.size), iconUrl: ic.secure_url, screenshots: sh, createdAt: serverTimestamp()
+      size: linkBytes, sizeText: sizeText, iconUrl: ic.secure_url, screenshots: sh, createdAt: serverTimestamp()
     });
     await setDoc(doc(db, "files", ref.id, "secret", "data"), { url: mf.secure_url, publicId: mf.public_id });
-    toast("Publish হয়েছে ✔"); $("#stat").textContent = ""; logMsg(`🚀 নতুন ফাইল publish: ${name} — ৳${price} (${fmtSize(file.size)})`, "ok");
-    ["fName", "fPrice", "fVer", "fCat", "fDesc", "fFile", "fIcon", "fShots"].forEach(i => $("#" + i).value = "");
+    toast("Publish হয়েছে ✔"); $("#stat").textContent = ""; logMsg(`🚀 নতুন ফাইল publish: ${name} — ৳${price} (${sizeText})`, "ok");
+    ["fName", "fPrice", "fVer", "fCat", "fDesc", "fLink", "fSize", "fIcon", "fShots"].forEach(i => $("#" + i).value = "");
   } catch (e) { toast("Error: " + e.message); $("#stat").textContent = "❌ " + e.message; }
   btn.disabled = false; setBar(0); $("#bar").classList.add("hide");
 };
