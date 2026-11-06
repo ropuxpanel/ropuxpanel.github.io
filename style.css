@@ -245,3 +245,8 @@ html.store footer .links a{border-radius:99px}
 .fab-item span{background:rgba(14,15,24,.92);border:1px solid var(--line);padding:6px 13px;border-radius:99px;font-size:13px;font-weight:600;backdrop-filter:blur(10px);color:var(--txt)}
 .fab-item i{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;box-shadow:0 10px 24px -8px #000;font-style:normal}
 .fab-item svg,.fab-main svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+
+.pm-rk .pm-logo{background:linear-gradient(135deg,#8c3494,#5e1a66)}
+.pm .pm-rk:has(input:checked){border-color:#a64bb0;background:rgba(140,52,148,.16);box-shadow:0 0 0 4px rgba(140,52,148,.14)}
+.co-num.rk{border-color:rgba(166,75,176,.5);background:linear-gradient(135deg,rgba(140,52,148,.16),transparent)}
+@media(max-width:380px){.pm label{font-size:13px;padding:14px 4px 12px}.pm-logo{width:46px;height:46px}}

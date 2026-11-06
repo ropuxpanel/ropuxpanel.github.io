@@ -78,6 +78,7 @@
     <div class="row">
       <div><label>bKash নম্বর</label><input id="sBkash"></div>
       <div><label>Nagad নম্বর</label><input id="sNagad"></div>
+      <div><label>Rocket নম্বর (খালি = লুকানো)</label><input id="sRocket"></div>
     </div>
     <div class="row">
       <div><label>Facebook link</label><input id="sFb"></div>
@@ -119,7 +120,7 @@ const SITE_FIELDS = [
   ["buyTitle", "Login-এর আগে বক্সের শিরোনাম"], ["buySteps", "ধাপগুলো (প্রতি লাইনে একটা)", 1], ["buyBtnText", "Buy বাটনের লেখা"],
   ["payTitle", "Checkout শিরোনাম"], ["payInstruction", "পেমেন্ট নির্দেশনা — {method} ও {price} লিখলে নিজে বসে যাবে", 1],
   ["senderLabel", "Sender নম্বর লেবেল"], ["trxLabel", "TrxID লেবেল"], ["submitText", "Submit বাটনের লেখা"], ["payNote", "Checkout নিচের নোট", 1],
-  ["bkashLogo", "bKash লোগোর ছবির লিংক (নিজের লোগো দাও)"], ["nagadLogo", "Nagad লোগোর ছবির লিংক (নিজের লোগো দাও)"],
+  ["bkashLogo", "bKash লোগোর ছবির লিংক (নিজের লোগো দাও)"], ["nagadLogo", "Nagad লোগোর ছবির লিংক (নিজের লোগো দাও)"], ["rocketLogo", "Rocket লোগোর ছবির লিংক (নিজের লোগো দাও)"],
   ["copyText", "Footer copyright লেখা"]
 ];
 $("#siteFields").innerHTML = SITE_FIELDS.map(([k, l, t]) => `<label>${esc(l)}</label>${t ? `<textarea rows="3" data-k="${k}"></textarea>` : `<input data-k="${k}">`}`).join("");
@@ -197,7 +198,7 @@ function start() {
   getDoc(doc(db, "settings", "site")).then(s => {
     const d = s.data() || {};
     $("#sSell").value = d.sellInfo || ""; $("#sAbout").value = d.about || "";
-    $("#sBkash").value = d.bkash || ""; $("#sNagad").value = d.nagad || "";
+    $("#sBkash").value = d.bkash || ""; $("#sNagad").value = d.nagad || ""; $("#sRocket").value = d.rocket || "";
     $("#sFb").value = d.facebook || ""; $("#sWa").value = d.whatsapp || "";
     $("#sPhone").value = d.phone || ""; $("#sEmail").value = d.email || "";
     document.querySelectorAll("[data-k]").forEach(e => e.value = d[e.dataset.k] || "");
@@ -286,7 +287,7 @@ $("#saveSite").onclick = async () => {
 
 $("#saveSet").onclick = async () => {
   await setDoc(doc(db, "settings", "site"), {
-    sellInfo: $("#sSell").value, about: $("#sAbout").value, bkash: $("#sBkash").value.trim(), nagad: $("#sNagad").value.trim(),
+    sellInfo: $("#sSell").value, about: $("#sAbout").value, bkash: $("#sBkash").value.trim(), nagad: $("#sNagad").value.trim(), rocket: $("#sRocket").value.trim(),
     facebook: $("#sFb").value.trim(), whatsapp: $("#sWa").value.trim(), phone: $("#sPhone").value.trim(), email: $("#sEmail").value.trim()
   }, { merge: true }); toast("Saved ✔"); logMsg("🛠 Settings সেভ করা হয়েছে");
 };

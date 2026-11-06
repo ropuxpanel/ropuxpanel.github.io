@@ -268,15 +268,16 @@ async function renderBuy(f) {
   }
   const rej = o && o.status === "rejected"
     ? `<p style="margin:8px 0"><span class="badge b-rejected">Rejected</span> ${esc(o.reason || "")} — সঠিক তথ্য দিয়ে আবার সাবমিট করো।</p>` : "";
-  const bk = settings.bkash || "—", ng = settings.nagad || "—";
+  const bk = settings.bkash || "—", ng = settings.nagad || "—", rk = (settings.rocket || "").trim();
   const logo = (u, ch) => u ? `<img src="${esc(u)}" alt="">` : ch;
   box.innerHTML = `<div class="co">
     <div class="co-title">🔒 ${esc(T("payTitle", "সিকিউর চেকআউট"))}</div>
     ${sumBox(f)}${rej}
     <div class="co-step"><i>1</i>পেমেন্ট মাধ্যম বেছে নাও</div>
-    <div class="pm">
+    <div class="pm" style="grid-template-columns:repeat(${rk ? 3 : 2},1fr)">
       <label class="pm-bk"><input type="radio" name="m" value="bKash" checked><span class="pm-logo">${logo(settings.bkashLogo, "b")}</span>bKash<span class="pm-tick">✓</span></label>
       <label class="pm-ng"><input type="radio" name="m" value="Nagad"><span class="pm-logo">${logo(settings.nagadLogo, "n")}</span>Nagad<span class="pm-tick">✓</span></label>
+      ${rk ? `<label class="pm-rk"><input type="radio" name="m" value="Rocket"><span class="pm-logo">${logo(settings.rocketLogo, "r")}</span>Rocket<span class="pm-tick">✓</span></label>` : ""}
     </div>
     <div class="co-step"><i>2</i>টাকা পাঠাও</div>
     <div id="payInfo"></div>
@@ -288,9 +289,9 @@ async function renderBuy(f) {
     <button class="btn ok big" id="sub">${esc(T("submitText", "✔ অর্ডার কনফার্ম করো"))}</button>
     <div class="co-note">${esc(T("payNote", "🔒 তোমার তথ্য সুরক্ষিত। Admin যাচাইয়ের পর ডাউনলোড চালু হবে।"))}</div></div>`;
   const info = () => {
-    const m = document.querySelector("input[name=m]:checked").value, num = m === "bKash" ? bk : ng;
+    const m = document.querySelector("input[name=m]:checked").value, num = m === "bKash" ? bk : m === "Nagad" ? ng : rk;
     const ins = T("payInstruction", "{method} (Send Money / Personal) নম্বরে {price} পাঠাও, তারপর নিচে Transaction ID দাও।").replace(/\{method\}/g, m).replace(/\{price\}/g, "৳" + f.price);
-    $("#payInfo").className = "co-num " + (m === "bKash" ? "bk" : "ng");
+    $("#payInfo").className = "co-num " + (m === "bKash" ? "bk" : m === "Nagad" ? "ng" : "rk");
     $("#payInfo").innerHTML = `<div class="co-numrow"><div><small>${esc(m)} নম্বর</small><b>${esc(num)}</b></div><button type="button" class="copy" id="cpy">📋 Copy</button></div><p>${esc(ins)}</p>`;
     $("#cpy").onclick = () => { try { navigator.clipboard.writeText(num).then(() => toast("নম্বর কপি হয়েছে")).catch(() => toast(num)); } catch { toast(num); } };
   };
