@@ -15,3 +15,8 @@ export const UPLOAD_PRESET = "ropubd";
 export const ADMIN_EMAILS = ["csm.mohasin@gmail.com"];
 
 export const SITE_NAME = "CSM Store";
+
+// Push notification (Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair)
+export const VAPID_KEY = "";
+// Cloudflare Worker URL (notify-worker.js deploy করার পর বসাও)
+export const NOTIFY_URL = "";

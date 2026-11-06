@@ -17,10 +17,11 @@
 <footer id="contact"></footer>
 
 <script type="module">
-import { firebaseConfig, SITE_NAME } from "./config.js";
+import { firebaseConfig, SITE_NAME, VAPID_KEY } from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-import { getFirestore, collection, doc, getDoc, getDocs, setDoc, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, arrayUnion, where, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getMessaging, getToken, onMessage, isSupported } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app), db = getFirestore(app);
@@ -46,7 +47,59 @@ onAuthStateChanged(auth, u => {
   if ($("#outBtn")) $("#outBtn").onclick = () => signOut(auth);
   if ($("#loginBtn2")) $("#loginBtn2").onclick = login;
   if (current) renderDetail(current);
+  if (u) { checkApproved(); if ("Notification" in window && Notification.permission === "granted") enableNotif(); }
 });
+
+// ---- Push notification ----
+let msgBound = false;
+async function enableNotif() {
+  try {
+    if (!user || !VAPID_KEY || !("Notification" in window) || !(await isSupported())) return false;
+    if (Notification.permission === "default") await Notification.requestPermission();
+    if (Notification.permission !== "granted") return false;
+    const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
+    const m = getMessaging(app);
+    const token = await getToken(m, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
+    if (token) await setDoc(doc(db, "tokens", user.uid), { tokens: arrayUnion(token), email: user.email }, { merge: true });
+    if (!msgBound) { msgBound = true; onMessage(m, p => { toast((p.notification && p.notification.title) || "Notification"); checkApproved(); if (current) renderBuy(current); }); }
+    return !!token;
+  } catch (e) { console.error(e); return false; }
+}
+
+// ---- Approved popup + one-time download ----
+async function checkApproved() {
+  if (!user) return;
+  try {
+    const s = await getDocs(query(collection(db, "orders"), where("uid", "==", user.uid)));
+    const list = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => o.status === "approved" && o.downloaded !== true);
+    if (list.length) showApproved(list);
+  } catch (e) { console.error(e); }
+}
+function showApproved(list) {
+  const old = $("#apPop"); if (old) old.remove();
+  const el = document.createElement("div"); el.id = "apPop";
+  el.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:999;display:flex;align-items:center;justify-content:center;padding:16px";
+  el.innerHTML = `<div class="box" style="max-width:420px;width:100%;max-height:85vh;overflow:auto">
+    <h3>✅ Payment Approved!</h3>
+    <p class="meta" style="margin:8px 0 14px">⚠ এটা paid ফাইল — একবারই ডাউনলোড করা যাবে। ডাউনলোড বাটনে চাপলেই আর পাবে না।</p>
+    ${list.map(o => `<div style="margin-bottom:10px"><b>${esc(o.fileName)}</b><br><button class="btn ok" data-dl="${esc(o.id)}">⬇ Download (একবার)</button></div>`).join("")}
+    <button class="btn ghost" id="apClose">পরে করবো</button></div>`;
+  document.body.append(el);
+  $("#apClose").onclick = () => el.remove();
+  el.querySelectorAll("[data-dl]").forEach(b => b.onclick = () => downloadOrder(list.find(o => o.id === b.dataset.dl), b));
+}
+async function downloadOrder(o, btn) {
+  if (!confirm("একবারই ডাউনলোড করা যাবে। এখনই ডাউনলোড করবে?")) return;
+  btn.disabled = true;
+  try {
+    const s = await getDoc(doc(db, "files", o.fileId, "secret", "data"));
+    const url = s.data().url;
+    await updateDoc(doc(db, "orders", o.id), { downloaded: true });
+    const p = $("#apPop"); if (p) p.remove();
+    toast("ডাউনলোড শুরু হচ্ছে...");
+    setTimeout(() => { location.href = url; }, 300);
+  } catch (e) { toast("Error: " + (e.code || e.message)); btn.disabled = false; }
+}
 
 async function boot() {
   try { const s = await getDoc(doc(db, "settings", "site")); settings = s.exists() ? s.data() : {}; } catch {}
@@ -54,7 +107,7 @@ async function boot() {
   const p = new URLSearchParams(location.search).get("app");
   if (p) {
     const id = p.split("-").pop();
-    const d = await getDoc(doc(db, "files", id));
+    let d; try { d = await getDoc(doc(db, "files", id)); } catch (e) { d = { exists: () => false }; }
     if (!d.exists()) { $("#app").innerHTML = `<div class="box">ফাইল পাওয়া যায়নি। <a href="index.html">হোমে যাও</a></div>`; return; }
     current = { id, ...d.data() };
     renderDetail(current);
@@ -82,8 +135,9 @@ async function renderHome() {
       <div class="search"><input id="q" placeholder="ফাইল খুঁজুন..."></div>
     </section>
     <div class="grid">${'<div class="sk"></div>'.repeat(6)}</div>`;
-  const snap = await getDocs(query(collection(db, "files"), orderBy("createdAt", "desc")));
-  const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  let items = [];
+  try { const snap = await getDocs(query(collection(db, "files"), orderBy("createdAt", "desc"))); items = snap.docs.map(d => ({ id: d.id, ...d.data() })); }
+  catch (e) { console.error(e); toast("Error: " + (e.code || e.message)); }
   $("#app").querySelector(".grid").outerHTML = `<div class="grid" id="grid"></div>`;
   const draw = t => {
     const list = items.filter(x => x.name.toLowerCase().includes(t.toLowerCase()));
@@ -140,20 +194,26 @@ async function renderBuy(f) {
   }
   box.innerHTML = "চেক করা হচ্ছে...";
   const oid = `${user.uid}_${f.id}`;
-  const od = await getDoc(doc(db, "orders", oid));
-  const o = od.exists() ? od.data() : null;
+  let o = null;
+  try { const od = await getDoc(doc(db, "orders", oid)); o = od.exists() ? od.data() : null; }
+  catch (e) { console.error(e); toast("Error: " + e.code); }
 
   if (o && o.status === "approved") {
-    let url = "";
-    try { const s = await getDoc(doc(db, "files", f.id, "secret", "data")); url = s.data().url; } catch {}
+    if (o.downloaded === true) {
+      box.innerHTML = `<span class="badge b-approved">Approved ✔</span><p style="margin:10px 0">এই ফাইল আগেই ডাউনলোড করা হয়েছে। Paid ফাইল তাই আর ডাউনলোড করা যাবে না।</p>`;
+      return;
+    }
     box.innerHTML = `<span class="badge b-approved">Approved ✔</span>
-      <p style="margin:10px 0">পেমেন্ট ভেরিফাইড! ডাউনলোড করো:</p>
-      <a class="btn ok big" href="${esc(url)}" target="_blank" download>⬇ Download</a>`;
+      <p style="margin:10px 0">পেমেন্ট ভেরিফাইড! ⚠ একবারই ডাউনলোড করা যাবে।</p>
+      <button class="btn ok big" id="dlBtn">⬇ Download (একবার)</button>`;
+    $("#dlBtn").onclick = () => downloadOrder({ id: oid, fileId: f.id }, $("#dlBtn"));
     return;
   }
   if (o && o.status === "pending") {
     box.innerHTML = `<span class="badge b-pending">Pending</span>
-      <p style="margin-top:10px">তোমার TrxID <b>${esc(o.trxId)}</b> যাচাই চলছে। Admin approve করলে এখানেই ডাউনলোড বাটন আসবে।</p>`;
+      <p style="margin-top:10px">তোমার TrxID <b>${esc(o.trxId)}</b> যাচাই চলছে। Admin approve করলে এখানেই ডাউনলোড বাটন আসবে।</p>
+      ${"Notification" in window && Notification.permission !== "granted" ? `<button class="btn ghost" id="nBtn" style="margin-top:10px">🔔 Approve হলে notification পাও</button>` : ""}`;
+    if ($("#nBtn")) $("#nBtn").onclick = async () => { toast(await enableNotif() ? "Notification চালু হয়েছে" : "Notification চালু করা যায়নি"); renderBuy(f); };
     return;
   }
   const rej = o && o.status === "rejected"
@@ -188,7 +248,7 @@ async function renderBuy(f) {
         method: document.querySelector("input[name=m]:checked").value,
         trxId: trx, senderNumber: sender, status: "pending", createdAt: serverTimestamp()
       });
-      toast("সাবমিট হয়েছে"); renderBuy(f);
+      toast("সাবমিট হয়েছে"); renderBuy(f); enableNotif();
     } catch (e) { toast("Error: " + e.code); $("#sub").disabled = false; }
   };
 }

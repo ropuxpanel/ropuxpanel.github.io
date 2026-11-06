@@ -72,7 +72,7 @@
 </div>
 
 <script type="module">
-import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS } from "./config.js";
+import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS, NOTIFY_URL } from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -106,7 +106,7 @@ function start() {
   // orders
   onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), s => {
     allOrders = s.docs.map(d => ({ id: d.id, ...d.data() })); drawOrders();
-  });
+  }, e => { console.error(e); $("#orders").innerHTML = `<tr><td colspan="5" class="meta">Error: ${esc(e.code || e.message)}</td></tr>`; toast("Orders error: " + (e.code || e.message)); });
   $("#ofilter").onchange = drawOrders;
   // files
   onSnapshot(query(collection(db, "files"), orderBy("createdAt", "desc")), s => {
@@ -123,7 +123,7 @@ function start() {
       await deleteDoc(doc(db, "files", b.dataset.d, "secret", "data")).catch(() => {});
       await deleteDoc(doc(db, "files", b.dataset.d)); toast("Deleted");
     });
-  });
+  }, e => { console.error(e); toast("Files error: " + (e.code || e.message)); });
   // settings
   getDoc(doc(db, "settings", "site")).then(s => {
     const d = s.data() || {};
@@ -132,6 +132,18 @@ function start() {
     $("#sFb").value = d.facebook || ""; $("#sWa").value = d.whatsapp || "";
     $("#sPhone").value = d.phone || ""; $("#sEmail").value = d.email || "";
   });
+}
+
+async function notifyUser(o) {
+  if (!o || !NOTIFY_URL) return;
+  try {
+    const t = await getDoc(doc(db, "tokens", o.uid));
+    const tokens = (t.data() || {}).tokens || [];
+    if (!tokens.length) return toast("User এর notification চালু নেই");
+    const r = await fetch(NOTIFY_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + await auth.currentUser.getIdToken() },
+      body: JSON.stringify({ tokens, title: "✅ Payment Approved", body: `${o.fileName} এখন ডাউনলোড করতে পারবে (একবারই)` }) });
+    toast(r.ok ? "Notification পাঠানো হয়েছে" : "Notification error " + r.status);
+  } catch (e) { toast("Notification error: " + e.message); }
 }
 
 function drawOrders() {
@@ -144,7 +156,14 @@ function drawOrders() {
     <td data-l="Status"><span><span class="badge b-${o.status}">${o.status}</span>${o.reason ? `<br><span class="meta">${esc(o.reason)}</span>` : ""}</span></td>
     <td>${o.status === "pending" ? `<button class="btn ok" data-a="${o.id}">Approve</button> <button class="btn bad" data-r="${o.id}">Reject</button>` : ""}</td></tr>`).join("")
     || `<tr><td colspan="5" class="meta">কিছু নেই</td></tr>`;
-  document.querySelectorAll("[data-a]").forEach(b => b.onclick = () => updateDoc(doc(db, "orders", b.dataset.a), { status: "approved", reason: "" }).then(() => toast("Approved")));
+  document.querySelectorAll("[data-a]").forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    try {
+      await updateDoc(doc(db, "orders", b.dataset.a), { status: "approved", reason: "", downloaded: false });
+      toast("Approved");
+      notifyUser(allOrders.find(x => x.id === b.dataset.a));
+    } catch (e) { toast("Error: " + (e.code || e.message)); b.disabled = false; }
+  });
   document.querySelectorAll("[data-r]").forEach(b => b.onclick = () => {
     const r = prompt("Reject এর কারণ:", "Transaction ID ভুল / টাকা পাইনি"); if (r === null) return;
     updateDoc(doc(db, "orders", b.dataset.r), { status: "rejected", reason: r }).then(() => toast("Rejected"));
@@ -158,7 +177,7 @@ function upload(file, onP) {
     const x = new XMLHttpRequest();
     x.open("POST", `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`);
     x.upload.onprogress = e => e.lengthComputable && onP && onP(e.loaded / e.total);
-    x.onload = () => { const j = JSON.parse(x.responseText); x.status < 300 ? res(j) : rej(new Error(j.error?.message || "upload failed")); };
+    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 ? res(j) : rej(new Error(j.error?.message || "upload failed")); };
     x.onerror = () => rej(new Error("network error"));
     x.send(fd);
   });
