@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Admin</title>
 <link rel="stylesheet" href="style.css">
+<style>
+#logBox{height:60vh;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px}
+.lg{max-width:92%;padding:9px 12px;border-radius:14px 14px 14px 4px;background:rgba(127,127,127,.15);font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.lg small{display:block;opacity:.6;font-size:11px;margin-top:3px}
+.lg.new{border-left:3px solid #f59e0b}.lg.ok{border-left:3px solid #22c55e}.lg.bad{border-left:3px solid #ef4444}.lg.mail{border-left:3px solid #3b82f6}
+</style>
 </head>
 <body>
 <header><h1>⚙ Admin Panel</h1><div id="userBox"></div></header>
@@ -19,6 +25,7 @@
     <button class="btn ghost" data-t="upload">⬆ নতুন ফাইল</button>
     <button class="btn ghost" data-t="files">📦 ফাইল লিস্ট</button>
     <button class="btn ghost" data-t="settings">🛠 Settings</button>
+    <button class="btn ghost" data-t="log">🤖 Log <span id="logDot"></span></button>
   </div>
 
   <!-- ORDERS -->
@@ -49,6 +56,12 @@
 
   <!-- FILES -->
   <div class="box hide" id="t-files"><div style="overflow-x:auto"><table><tbody id="files"></tbody></table></div></div>
+
+  <!-- LOG -->
+  <div class="box hide" id="t-log">
+    <div class="row" style="margin-bottom:10px"><span class="meta">সব activity এখানে লেখা থাকে (এই browser এ save হয়)</span><button class="btn ghost" id="logClear">🗑 Clear</button></div>
+    <div id="logBox"></div>
+  </div>
 
   <!-- SETTINGS -->
   <div class="box hide" id="t-settings">
@@ -85,6 +98,34 @@ const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(2) + " MB" : (b / 1024)
 
 $("#loginBtn").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => toast(e.code));
 
+// ---- Activity log (localStorage) ----
+const LOG_KEY = "ropu_admin_log";
+let logs = []; try { logs = JSON.parse(localStorage.getItem(LOG_KEY) || "[]"); } catch {}
+const fmtT = t => new Date(t).toLocaleString("bn-BD", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+function drawLog() {
+  const bx = $("#logBox"); if (!bx) return;
+  bx.innerHTML = logs.length ? logs.map(l => `<div class="lg ${l.k || ""}">${esc(l.m)}<small>${fmtT(l.t)}</small></div>`).join("") : `<p class="meta">এখনো কোনো activity নেই।</p>`;
+  bx.scrollTop = bx.scrollHeight;
+}
+function logMsg(m, k, key, t) {
+  if (key && logs.some(l => l.key === key)) return false;
+  logs.push({ m, k, key, t: t || Date.now() });
+  logs = logs.slice(-500);
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(logs)); } catch {}
+  drawLog();
+  if ($("#t-log") && $("#t-log").classList.contains("hide")) $("#logDot").textContent = "🔴";
+  return true;
+}
+function syncLog(list) {
+  [...list].reverse().forEach(o => {
+    const ts = o.createdAt && o.createdAt.toMillis ? o.createdAt.toMillis() : Date.now();
+    logMsg(`🛒 নতুন order এসেছে\nফাইল: ${o.fileName} — ৳${o.price}\nUser: ${o.userName} (${o.email})\n${o.method} · TrxID: ${o.trxId} · From: ${o.senderNumber}\n📧 Admin কে email পাঠানোর অনুরোধ গেছে\nOrder ID: ${o.id}`, "new", "new:" + o.id + ":" + ts, ts);
+    if (o.status === "approved") logMsg(`✅ Order approved\n${o.fileName} — ${o.email}${o.downloaded ? "\n⬇ User ডাউনলোড করেছে" : ""}`, "ok", "ap:" + o.id + ":" + ts);
+    if (o.status === "approved" && o.downloaded) logMsg(`⬇ ${o.email} "${o.fileName}" ডাউনলোড করেছে (আর পাবে না)`, "ok", "dl:" + o.id + ":" + ts);
+    if (o.status === "rejected") logMsg(`❌ Order rejected\n${o.fileName} — ${o.email}\nকারণ: ${o.reason || "—"}`, "bad", "rj:" + o.id + ":" + (o.reason || ""));
+  });
+}
+
 let started = false, allOrders = [];
 onAuthStateChanged(auth, u => {
   $("#userBox").innerHTML = u ? `<span class="meta">${esc(u.email)}</span> <button class="btn ghost" id="out">Logout</button>` : "";
@@ -93,21 +134,23 @@ onAuthStateChanged(auth, u => {
   const ok = u && ADMIN_EMAILS.includes(u.email);
   $("#denied").classList.toggle("hide", !(u && !ok));
   $("#panel").classList.toggle("hide", !ok);
-  if (ok && !started) { started = true; start(); }
+  if (ok && !started) { started = true; drawLog(); logMsg("🟢 Admin panel চালু হয়েছে (" + u.email + ")", "", null); start(); }
 });
 
 // tabs
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
-  ["orders", "upload", "files", "settings"].forEach(t => $("#t-" + t).classList.toggle("hide", t !== b.dataset.t));
+  ["orders", "upload", "files", "settings", "log"].forEach(t => $("#t-" + t).classList.toggle("hide", t !== b.dataset.t));
+  if (b.dataset.t === "log") { $("#logDot").textContent = ""; const bx = $("#logBox"); bx.scrollTop = bx.scrollHeight; }
 });
 
 function start() {
   // orders
   onSnapshot(query(collection(db, "orders"), orderBy("createdAt", "desc")), s => {
-    allOrders = s.docs.map(d => ({ id: d.id, ...d.data() })); drawOrders();
+    allOrders = s.docs.map(d => ({ id: d.id, ...d.data() })); syncLog(allOrders); drawOrders();
   }, e => { console.error(e); $("#orders").innerHTML = `<tr><td colspan="5" class="meta">Error: ${esc(e.code || e.message)}</td></tr>`; toast("Orders error: " + (e.code || e.message)); });
   $("#ofilter").onchange = drawOrders;
+  $("#logClear").onclick = () => { if (confirm("Log মুছে ফেলবে?")) { logs = []; try { localStorage.removeItem(LOG_KEY); } catch {} drawLog(); } };
   // files
   onSnapshot(query(collection(db, "files"), orderBy("createdAt", "desc")), s => {
     $("#files").innerHTML = s.docs.map(d => { const x = d.data(); return `<tr>
@@ -116,12 +159,12 @@ function start() {
       <td data-l="দাম ৳"><input value="${esc(x.price)}" type="number" style="width:110px;margin:0" data-p="${d.id}"></td>
       <td><button class="btn ghost" data-s="${d.id}">Save</button> <button class="btn bad" data-d="${d.id}">Delete</button></td></tr>`; }).join("");
     document.querySelectorAll("[data-s]").forEach(b => b.onclick = async () => {
-      await updateDoc(doc(db, "files", b.dataset.s), { price: Number(document.querySelector(`[data-p="${b.dataset.s}"]`).value) }); toast("Updated");
+      await updateDoc(doc(db, "files", b.dataset.s), { price: Number(document.querySelector(`[data-p="${b.dataset.s}"]`).value) }); toast("Updated"); logMsg("💲 ফাইলের দাম আপডেট: " + document.querySelector(`[data-p="${b.dataset.s}"]`).value + " ৳ (ID " + b.dataset.s + ")");
     });
     document.querySelectorAll("[data-d]").forEach(b => b.onclick = async () => {
       if (!confirm("মুছে ফেলবে?")) return;
       await deleteDoc(doc(db, "files", b.dataset.d, "secret", "data")).catch(() => {});
-      await deleteDoc(doc(db, "files", b.dataset.d)); toast("Deleted");
+      await deleteDoc(doc(db, "files", b.dataset.d)); toast("Deleted"); logMsg("🗑 ফাইল মুছে ফেলা হয়েছে (ID " + b.dataset.d + ")", "bad");
     });
   }, e => { console.error(e); toast("Files error: " + (e.code || e.message)); });
   // settings
@@ -137,13 +180,14 @@ function start() {
 async function notifyUser(o) {
   if (!o || !NOTIFY_URL) return;
   try {
-    const t = await getDoc(doc(db, "tokens", o.uid));
-    const tokens = (t.data() || {}).tokens || [];
-    if (!tokens.length) return toast("User এর notification চালু নেই");
+    let tokens = [];
+    try { const t = await getDoc(doc(db, "tokens", o.uid)); tokens = (t.data() || {}).tokens || []; } catch {}
     const r = await fetch(NOTIFY_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + await auth.currentUser.getIdToken() },
-      body: JSON.stringify({ tokens, title: "✅ Payment Approved", body: `${o.fileName} এখন ডাউনলোড করতে পারবে (একবারই)` }) });
-    toast(r.ok ? "Notification পাঠানো হয়েছে" : "Notification error " + r.status);
-  } catch (e) { toast("Notification error: " + e.message); }
+      body: JSON.stringify({ type: "approved", orderId: o.id, tokens }) });
+    const j = await r.json().catch(() => ({}));
+    toast(r.ok ? `Email ${j.mail === 200 ? "✔" : "✖ " + j.mail}${tokens.length ? " · Push ✔" : " · Push নেই"}` : "Notify error: " + (j.error || r.status));
+    logMsg(r.ok ? `${j.mail === 200 ? "📧 Approve email পাঠানো হয়েছে" : "⚠ Email যায়নি (code " + j.mail + ")"}: ${o.email}\n${tokens.length ? "🔔 Push notification পাঠানো হয়েছে" : "🔕 Push নেই (user notification চালু করেনি)"}` : "⚠ Notify error: " + (j.error || r.status), r.ok && j.mail === 200 ? "mail" : "bad");
+  } catch (e) { toast("Notify error: " + e.message); logMsg("⚠ Notify error: " + e.message, "bad"); }
 }
 
 function drawOrders() {
@@ -201,7 +245,7 @@ $("#publish").onclick = async () => {
       size: file.size, sizeText: fmtSize(file.size), iconUrl: ic.secure_url, screenshots: sh, createdAt: serverTimestamp()
     });
     await setDoc(doc(db, "files", ref.id, "secret", "data"), { url: mf.secure_url, publicId: mf.public_id });
-    toast("Publish হয়েছে ✔"); $("#stat").textContent = "";
+    toast("Publish হয়েছে ✔"); $("#stat").textContent = ""; logMsg(`🚀 নতুন ফাইল publish: ${name} — ৳${price} (${fmtSize(file.size)})`, "ok");
     ["fName", "fPrice", "fVer", "fCat", "fDesc", "fFile", "fIcon", "fShots"].forEach(i => $("#" + i).value = "");
   } catch (e) { toast("Error: " + e.message); $("#stat").textContent = "❌ " + e.message; }
   btn.disabled = false; setBar(0); $("#bar").classList.add("hide");
@@ -211,7 +255,7 @@ $("#saveSet").onclick = async () => {
   await setDoc(doc(db, "settings", "site"), {
     sellInfo: $("#sSell").value, about: $("#sAbout").value, bkash: $("#sBkash").value.trim(), nagad: $("#sNagad").value.trim(),
     facebook: $("#sFb").value.trim(), whatsapp: $("#sWa").value.trim(), phone: $("#sPhone").value.trim(), email: $("#sEmail").value.trim()
-  }); toast("Saved ✔");
+  }); toast("Saved ✔"); logMsg("🛠 Settings সেভ করা হয়েছে");
 };
 </script>
 </body>

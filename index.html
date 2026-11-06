@@ -17,7 +17,7 @@
 <footer id="contact"></footer>
 
 <script type="module">
-import { firebaseConfig, SITE_NAME, VAPID_KEY } from "./config.js";
+import { firebaseConfig, SITE_NAME, VAPID_KEY, NOTIFY_URL } from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, getDocs, setDoc, updateDoc, arrayUnion, where, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -54,16 +54,17 @@ onAuthStateChanged(auth, u => {
 let msgBound = false;
 async function enableNotif() {
   try {
-    if (!user || !VAPID_KEY || !("Notification" in window) || !(await isSupported())) return false;
+    if (!user) return false;
+    if (!VAPID_KEY || !("Notification" in window) || !(await isSupported())) { toast("এই browser এ notification support নেই (Chrome/Safari এ সাইট ওপেন করো)"); return false; }
     if (Notification.permission === "default") await Notification.requestPermission();
-    if (Notification.permission !== "granted") return false;
+    if (Notification.permission !== "granted") { toast("Notification permission দাওনি"); return false; }
     const reg = await navigator.serviceWorker.register("firebase-messaging-sw.js");
     const m = getMessaging(app);
     const token = await getToken(m, { vapidKey: VAPID_KEY, serviceWorkerRegistration: reg });
     if (token) await setDoc(doc(db, "tokens", user.uid), { tokens: arrayUnion(token), email: user.email }, { merge: true });
     if (!msgBound) { msgBound = true; onMessage(m, p => { toast((p.notification && p.notification.title) || "Notification"); checkApproved(); if (current) renderBuy(current); }); }
     return !!token;
-  } catch (e) { console.error(e); return false; }
+  } catch (e) { console.error(e); toast("Notification error: " + (e.code || e.message)); return false; }
 }
 
 // ---- Approved popup + one-time download ----
@@ -212,7 +213,7 @@ async function renderBuy(f) {
   if (o && o.status === "pending") {
     box.innerHTML = `<span class="badge b-pending">Pending</span>
       <p style="margin-top:10px">তোমার TrxID <b>${esc(o.trxId)}</b> যাচাই চলছে। Admin approve করলে এখানেই ডাউনলোড বাটন আসবে।</p>
-      ${"Notification" in window && Notification.permission !== "granted" ? `<button class="btn ghost" id="nBtn" style="margin-top:10px">🔔 Approve হলে notification পাও</button>` : ""}`;
+      <button class="btn ghost" id="nBtn" style="margin-top:10px">🔔 Approve হলে notification পাও</button>`;
     if ($("#nBtn")) $("#nBtn").onclick = async () => { toast(await enableNotif() ? "Notification চালু হয়েছে" : "Notification চালু করা যায়নি"); renderBuy(f); };
     return;
   }
@@ -249,6 +250,7 @@ async function renderBuy(f) {
         trxId: trx, senderNumber: sender, status: "pending", createdAt: serverTimestamp()
       });
       toast("সাবমিট হয়েছে"); renderBuy(f); enableNotif();
+      if (NOTIFY_URL) user.getIdToken().then(t => fetch(NOTIFY_URL, { method: "POST", headers: { "Content-Type": "application/json", Authorization: "Bearer " + t }, body: JSON.stringify({ type: "new_order", orderId: oid }) })).catch(() => {});
     } catch (e) { toast("Error: " + e.code); $("#sub").disabled = false; }
   };
 }
