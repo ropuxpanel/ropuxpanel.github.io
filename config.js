@@ -19,4 +19,4 @@ export const SITE_NAME = "CSM Store";
 // Push notification (Firebase Console → Project settings → Cloud Messaging → Web Push certificates → Generate key pair)
 export const VAPID_KEY = "BCil0IOTus9IFmpTm4crylv8jYgnehsEBs1FF8MTrA8JQJyVWwaDI0gE1d8nYEyRo8Yl_N9eotmcyCz5XsfjfhM";
 // Cloudflare Worker URL (notify-worker.js deploy করার পর বসাও)
-export const NOTIFY_URL = "";
+export const NOTIFY_URL = "https://ropu.csm-mohasin.workers.dev/";
