@@ -24,6 +24,7 @@
     <button class="btn ghost active" data-t="orders">💰 Orders</button>
     <button class="btn ghost" data-t="upload">⬆ নতুন ফাইল</button>
     <button class="btn ghost" data-t="files">📦 ফাইল লিস্ট</button>
+    <button class="btn ghost" data-t="site">🎨 Site Texts</button>
     <button class="btn ghost" data-t="settings">🛠 Settings</button>
     <button class="btn ghost" data-t="log">🤖 Log <span id="logDot"></span></button>
   </div>
@@ -63,6 +64,13 @@
     <div id="logBox"></div>
   </div>
 
+  <!-- SITE TEXTS -->
+  <div class="box hide" id="t-site">
+    <p class="meta" style="margin-bottom:12px">হোমপেজ ও checkout-এর সব লেখা এখান থেকে বদলাও। খালি রাখলে ডিফল্ট লেখা দেখাবে। (Contact/FAB নম্বর "Settings" ট্যাবে)</p>
+    <div id="siteFields"></div>
+    <button class="btn" id="saveSite">Save</button>
+  </div>
+
   <!-- SETTINGS -->
   <div class="box hide" id="t-settings">
     <label>সেল সম্পর্কিত তথ্য (হোমপেজে দেখাবে)</label><textarea id="sSell" rows="3"></textarea>
@@ -97,6 +105,24 @@ const toast = m => { const t = document.createElement("div"); t.className = "toa
 const fmtSize = b => b > 1048576 ? (b / 1048576).toFixed(2) + " MB" : (b / 1024).toFixed(1) + " KB";
 
 $("#loginBtn").onclick = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => toast(e.code));
+
+// ---- Site text fields ----
+const SITE_FIELDS = [
+  ["brandName", "ব্র্যান্ড নাম (header ও footer)"], ["logoUrl", "লোগো ছবির লিংক (ঐচ্ছিক)"],
+  ["announce", "Top announcement bar (খালি = লুকানো)"],
+  ["accent", "Accent রঙ ১ (hex, যেমন #d4af6a)"], ["accent2", "Accent রঙ ২ (hex, যেমন #f3dca4)"],
+  ["heroBadge", "Hero ব্যাজ"], ["heroTitle", "Hero শিরোনাম (লাইন ১)"], ["heroHighlight", "Hero হাইলাইট শব্দ (রঙিন)"], ["heroTitle2", "Hero শিরোনাম (লাইন ২)"],
+  ["searchPlaceholder", "Search box লেখা"],
+  ["trustItems", "Trust items — প্রতি লাইনে: আইকন|শিরোনাম|বর্ণনা", 1],
+  ["allFilesTitle", "ফাইল সেকশনের শিরোনাম"], ["allLabel", "'সব' ক্যাটাগরি বাটনের লেখা"], ["emptyText", "ফাইল না থাকলে যে লেখা"],
+  ["backText", "ফিরে যাওয়ার লিংকের লেখা"], ["descTitle", "বিবরণ শিরোনাম"], ["shotsTitle", "Screenshots শিরোনাম"],
+  ["buyTitle", "Login-এর আগে বক্সের শিরোনাম"], ["buySteps", "ধাপগুলো (প্রতি লাইনে একটা)", 1], ["buyBtnText", "Buy বাটনের লেখা"],
+  ["payTitle", "Checkout শিরোনাম"], ["payInstruction", "পেমেন্ট নির্দেশনা — {method} ও {price} লিখলে নিজে বসে যাবে", 1],
+  ["senderLabel", "Sender নম্বর লেবেল"], ["trxLabel", "TrxID লেবেল"], ["submitText", "Submit বাটনের লেখা"], ["payNote", "Checkout নিচের নোট", 1],
+  ["bkashLogo", "bKash লোগোর ছবির লিংক (নিজের লোগো দাও)"], ["nagadLogo", "Nagad লোগোর ছবির লিংক (নিজের লোগো দাও)"],
+  ["copyText", "Footer copyright লেখা"]
+];
+$("#siteFields").innerHTML = SITE_FIELDS.map(([k, l, t]) => `<label>${esc(l)}</label>${t ? `<textarea rows="3" data-k="${k}"></textarea>` : `<input data-k="${k}">`}`).join("");
 
 // ---- Activity log (localStorage) ----
 const LOG_KEY = "ropu_admin_log";
@@ -140,7 +166,7 @@ onAuthStateChanged(auth, u => {
 // tabs
 document.querySelectorAll(".tabs button").forEach(b => b.onclick = () => {
   document.querySelectorAll(".tabs button").forEach(x => x.classList.toggle("active", x === b));
-  ["orders", "upload", "files", "settings", "log"].forEach(t => $("#t-" + t).classList.toggle("hide", t !== b.dataset.t));
+  ["orders", "upload", "files", "site", "settings", "log"].forEach(t => $("#t-" + t).classList.toggle("hide", t !== b.dataset.t));
   if (b.dataset.t === "log") { $("#logDot").textContent = ""; const bx = $("#logBox"); bx.scrollTop = bx.scrollHeight; }
 });
 
@@ -174,6 +200,7 @@ function start() {
     $("#sBkash").value = d.bkash || ""; $("#sNagad").value = d.nagad || "";
     $("#sFb").value = d.facebook || ""; $("#sWa").value = d.whatsapp || "";
     $("#sPhone").value = d.phone || ""; $("#sEmail").value = d.email || "";
+    document.querySelectorAll("[data-k]").forEach(e => e.value = d[e.dataset.k] || "");
   });
 }
 
@@ -251,11 +278,17 @@ $("#publish").onclick = async () => {
   btn.disabled = false; setBar(0); $("#bar").classList.add("hide");
 };
 
+$("#saveSite").onclick = async () => {
+  const data = {}; document.querySelectorAll("[data-k]").forEach(e => data[e.dataset.k] = e.value.trim());
+  try { await setDoc(doc(db, "settings", "site"), data, { merge: true }); toast("Saved ✔"); logMsg("🎨 Site texts আপডেট করা হয়েছে"); }
+  catch (e) { toast("Error: " + (e.code || e.message)); }
+};
+
 $("#saveSet").onclick = async () => {
   await setDoc(doc(db, "settings", "site"), {
     sellInfo: $("#sSell").value, about: $("#sAbout").value, bkash: $("#sBkash").value.trim(), nagad: $("#sNagad").value.trim(),
     facebook: $("#sFb").value.trim(), whatsapp: $("#sWa").value.trim(), phone: $("#sPhone").value.trim(), email: $("#sEmail").value.trim()
-  }); toast("Saved ✔"); logMsg("🛠 Settings সেভ করা হয়েছে");
+  }, { merge: true }); toast("Saved ✔"); logMsg("🛠 Settings সেভ করা হয়েছে");
 };
 </script>
 </body>

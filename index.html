@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="bn">
+<html lang="bn" class="store">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div class="ann hide" id="ann"></div>
 <header>
   <h1 id="siteName"><a href="index.html" style="color:inherit">CSM Store</a></h1>
   <div id="userBox"><button class="btn" id="loginBtn">Google দিয়ে Sign in</button></div>
@@ -15,6 +16,7 @@
 <div class="wrap" id="app">লোড হচ্ছে...</div>
 
 <footer id="contact"></footer>
+<div class="fab hide" id="fab"><div class="fab-menu" id="fabMenu"></div><button class="fab-main" id="fabBtn" aria-label="Contact"><svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg></button></div>
 
 <script type="module">
 import { firebaseConfig, SITE_NAME, VAPID_KEY, NOTIFY_URL } from "./config.js";
@@ -30,8 +32,6 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&l
 const toast = m => { const t = document.createElement("div"); t.className = "toast"; t.textContent = m; document.body.append(t); setTimeout(() => t.remove(), 2800); };
 const slug = s => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "app";
 
-$("#siteName").innerHTML = `<a href="index.html" style="color:inherit">${esc(SITE_NAME)}</a>`;
-document.title = SITE_NAME;
 
 let user = null, settings = {}, current = null;
 
@@ -102,9 +102,27 @@ async function downloadOrder(o, btn) {
   } catch (e) { toast("Error: " + (e.code || e.message)); btn.disabled = false; }
 }
 
+// ---- settings helpers (সব লেখা admin থেকে বদলানো যায়) ----
+const T = (k, d) => { const v = settings[k]; return v && String(v).trim() ? String(v) : d; };
+const L = (k, d) => T(k, d).split("\n").map(s => s.trim()).filter(Boolean);
+const okHex = h => /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(h || "").trim());
+const lum = h => { h = h.replace("#", ""); if (h.length === 3) h = h.split("").map(c => c + c).join(""); const [r, g, b] = [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16) / 255); return .2126 * r + .7152 * g + .0722 * b; };
+const DEF_TRUST = "⚡|দ্রুত ভেরিফিকেশন|পেমেন্টের কয়েক মিনিটের মধ্যেই\n🔒|নিরাপদ পেমেন্ট|bKash / Nagad এ সরাসরি\n⬇|ইনস্ট্যান্ট ডাউনলোড|Approve হলেই ডাউনলোড চালু\n💬|সাপোর্ট|যেকোনো সমস্যায় পাশে আছি";
+const DEF_STEPS = "Google দিয়ে Sign in করো\nbKash / Nagad এ টাকা পাঠাও\nTransaction ID দাও\nApprove হলেই ডাউনলোড";
+
+function applyTheme() {
+  const r = document.documentElement.style, a = okHex(settings.accent) ? settings.accent.trim() : null, b = okHex(settings.accent2) ? settings.accent2.trim() : null;
+  if (a) { r.setProperty("--pri", a); r.setProperty("--onpri", lum(a) > .55 ? "#151008" : "#ffffff"); }
+  if (b) r.setProperty("--pri2", b);
+  const n = T("brandName", SITE_NAME); document.title = n;
+  const logo = settings.logoUrl ? `<img class="mark" src="${esc(settings.logoUrl)}" alt="">` : `<span class="mark">${esc([...n][0] || "S")}</span>`;
+  $("#siteName").innerHTML = `<a href="index.html" class="brand">${logo}<span>${esc(n)}</span></a>`;
+  const ann = $("#ann"); ann.textContent = T("announce", ""); ann.classList.toggle("hide", !T("announce", ""));
+}
+
 async function boot() {
   try { const s = await getDoc(doc(db, "settings", "site")); settings = s.exists() ? s.data() : {}; } catch {}
-  renderContact();
+  applyTheme(); renderContact(); renderFab();
   const p = new URLSearchParams(location.search).get("app");
   if (p) {
     const id = p.split("-").pop();
@@ -116,47 +134,75 @@ async function boot() {
 }
 
 function renderContact() {
-  const s = settings, L = [];
-  if (s.about) L.push(`<p>${esc(s.about)}</p>`);
-  const links = [];
-  if (s.facebook) links.push(`<a href="${esc(s.facebook)}" target="_blank">Facebook</a>`);
-  if (s.whatsapp) links.push(`<a href="https://wa.me/${esc(String(s.whatsapp).replace(/\D/g, ""))}" target="_blank">WhatsApp</a>`);
+  const s = settings, n = T("brandName", SITE_NAME), links = [];
+  if (s.facebook) links.push(`<a href="${esc(s.facebook)}" target="_blank" rel="noopener">Facebook</a>`);
+  if (s.whatsapp) links.push(`<a href="https://wa.me/${esc(String(s.whatsapp).replace(/\D/g, ""))}" target="_blank" rel="noopener">WhatsApp</a>`);
   if (s.phone) links.push(`<a href="tel:${esc(s.phone)}">📞 ${esc(s.phone)}</a>`);
   if (s.email) links.push(`<a href="mailto:${esc(s.email)}">✉ ${esc(s.email)}</a>`);
-  L.push(`<div class="links">${links.join("")}</div>`);
-  L.push(`<p class="meta" style="margin-top:18px">© ${new Date().getFullYear()} ${esc(SITE_NAME)}</p>`);
-  $("#contact").innerHTML = L.join("");
+  $("#contact").innerHTML = `<div class="fbrand"><span class="mark">${esc([...n][0] || "S")}</span>${esc(n)}</div>
+    ${s.about ? `<p>${esc(s.about)}</p>` : ""}<div class="links">${links.join("")}</div>
+    <p class="meta" style="margin-top:20px">${esc(T("copyText", "© " + new Date().getFullYear() + " " + n + ". All rights reserved."))}</p>`;
+}
+
+function renderFab() {
+  const s = settings, it = [];
+  const chat = '<svg viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>';
+  const phone = '<svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>';
+  const mail = '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>';
+  if (s.whatsapp) it.push([`https://wa.me/${String(s.whatsapp).replace(/\D/g, "")}`, "WhatsApp", "#25d366", chat]);
+  if (s.facebook) it.push([s.facebook, "Messenger / Facebook", "#0a84ff", chat]);
+  if (s.phone) it.push([`tel:${s.phone}`, "কল করুন", "#8b5cf6", phone]);
+  if (s.email) it.push([`mailto:${s.email}`, "Email", "#ea4335", mail]);
+  const fab = $("#fab"); if (!it.length) return fab.classList.add("hide");
+  fab.classList.remove("hide");
+  $("#fabMenu").innerHTML = it.map(([h, l, c, svg]) => `<a class="fab-item" href="${esc(h)}" target="_blank" rel="noopener"><span>${esc(l)}</span><i style="background:${c}">${svg}</i></a>`).join("");
+  $("#fabBtn").onclick = () => fab.classList.toggle("open");
 }
 
 async function renderHome() {
+  const trust = L("trustItems", DEF_TRUST).map(x => { const [i, t, d] = x.split("|"); return `<div class="tr"><span class="tr-i">${esc(i || "✦")}</span><div><b>${esc(t || "")}</b><small>${esc(d || "")}</small></div></div>`; }).join("");
   $("#app").innerHTML = `
     <section class="hero">
-      <h2>প্রিমিয়াম <span>অ্যাপ ও ফাইল</span><br>এক জায়গায়</h2>
-      <p>${esc(settings.sellInfo || "পছন্দের ফাইল বেছে নাও, bKash / Nagad এ পেমেন্ট করো, ভেরিফাই হলেই ডাউনলোড।")}</p>
-      <div class="search"><input id="q" placeholder="ফাইল খুঁজুন..."></div>
+      <span class="hbadge">${esc(T("heroBadge", "✦ Premium Digital Store"))}</span>
+      <h2>${esc(T("heroTitle", "প্রিমিয়াম"))} <span>${esc(T("heroHighlight", "অ্যাপ ও ফাইল"))}</span><br>${esc(T("heroTitle2", "এক জায়গায়"))}</h2>
+      <p>${esc(T("sellInfo", "পছন্দের ফাইল বেছে নাও, bKash / Nagad এ পেমেন্ট করো, ভেরিফাই হলেই ডাউনলোড।"))}</p>
+      <div class="search"><input id="q" placeholder="${esc(T("searchPlaceholder", "ফাইল খুঁজুন..."))}"></div>
     </section>
-    <div class="grid">${'<div class="sk"></div>'.repeat(6)}</div>`;
+    <div class="trust">${trust}</div>
+    <div class="sec-head"><h3>${esc(T("allFilesTitle", "সব ফাইল"))}</h3>
+      <select id="sortSel"><option value="new">নতুন আগে</option><option value="low">দাম কম → বেশি</option><option value="high">দাম বেশি → কম</option></select></div>
+    <div class="cats" id="cats"></div>
+    <div class="grid" id="grid">${'<div class="sk"></div>'.repeat(6)}</div>`;
   let items = [];
   try { const snap = await getDocs(query(collection(db, "files"), orderBy("createdAt", "desc"))); items = snap.docs.map(d => ({ id: d.id, ...d.data() })); }
   catch (e) { console.error(e); toast("Error: " + (e.code || e.message)); }
-  $("#app").querySelector(".grid").outerHTML = `<div class="grid" id="grid"></div>`;
-  const draw = t => {
-    const list = items.filter(x => x.name.toLowerCase().includes(t.toLowerCase()));
-    $("#grid").innerHTML = list.length ? list.map((x, i) => `
-      <div class="card" style="animation-delay:${i * 50}ms" onclick="location.href='?app=${slug(x.name)}-${x.id}'">
-        <img src="${esc(x.iconUrl)}" alt="" loading="lazy">
-        <h3>${esc(x.name)}</h3>
-        <div class="foot"><span class="price">৳${esc(x.price)}</span><span class="chip">${esc(x.sizeText)}</span></div>
-      </div>`).join("") : `<p class="meta" style="grid-column:1/-1;text-align:center;padding:30px">কোনো ফাইল পাওয়া যায়নি</p>`;
+  let cat = "", term = "", sort = "new";
+  const allLabel = T("allLabel", "সব");
+  const cats = [...new Set(items.map(x => (x.category || "").trim()).filter(Boolean))];
+  const drawCats = () => {
+    $("#cats").innerHTML = cats.length ? [["", allLabel], ...cats.map(c => [c, c])].map(([v, l]) => `<button class="${v === cat ? "on" : ""}" data-c="${esc(v)}">${esc(l)}</button>`).join("") : "";
+    document.querySelectorAll("#cats button").forEach(b => b.onclick = () => { cat = b.dataset.c; drawCats(); draw(); });
   };
-  draw("");
-  $("#q").oninput = e => draw(e.target.value);
+  const draw = () => {
+    let list = items.filter(x => (!cat || (x.category || "").trim() === cat) && String(x.name || "").toLowerCase().includes(term.toLowerCase()));
+    if (sort === "low") list.sort((a, b) => a.price - b.price); else if (sort === "high") list.sort((a, b) => b.price - a.price);
+    $("#grid").innerHTML = list.length ? list.map((x, i) => `
+      <div class="pcard" style="animation-delay:${i * 45}ms" onclick="location.href='?app=${slug(x.name)}-${x.id}'">
+        <div class="pimg"><img src="${esc(x.iconUrl)}" alt="" loading="lazy">${x.category ? `<span class="pcat">${esc(x.category)}</span>` : ""}</div>
+        <div class="pbody"><h3>${esc(x.name)}</h3>
+          <div class="pmeta">${x.version ? "v" + esc(x.version) + " · " : ""}${esc(x.sizeText)}</div>
+          <div class="pfoot"><span class="price">৳${esc(x.price)}</span><span class="pbtn">দেখো →</span></div></div>
+      </div>`).join("") : `<p class="meta" style="grid-column:1/-1;text-align:center;padding:40px">${esc(T("emptyText", "কোনো ফাইল পাওয়া যায়নি"))}</p>`;
+  };
+  drawCats(); draw();
+  $("#q").oninput = e => { term = e.target.value; draw(); };
+  $("#sortSel").onchange = e => { sort = e.target.value; draw(); };
 }
 
 async function renderDetail(f) {
   window.scrollTo(0, 0);
   $("#app").innerHTML = `
-    <a class="back" href="index.html">← সব ফাইল</a>
+    <a class="back" href="index.html">${esc(T("backText", "← সব ফাইল"))}</a>
     <div class="detail">
       <div>
         <div class="box" style="margin-top:8px">
@@ -173,8 +219,8 @@ async function renderDetail(f) {
             </div>
           </div>
         </div>
-        ${(f.screenshots || []).length ? `<div class="box"><h3>Screenshots</h3><div class="shots">${f.screenshots.map(u => `<img src="${esc(u)}" loading="lazy">`).join("")}</div></div>` : ""}
-        <div class="box"><h3>বিবরণ</h3><p style="white-space:pre-wrap;color:var(--mut)">${esc(f.description)}</p></div>
+        ${(f.screenshots || []).length ? `<div class="box"><h3>${esc(T("shotsTitle", "Screenshots"))}</h3><div class="shots">${f.screenshots.map(u => `<img src="${esc(u)}" loading="lazy">`).join("")}</div></div>` : ""}
+        <div class="box"><h3>${esc(T("descTitle", "বিবরণ"))}</h3><p style="white-space:pre-wrap;color:var(--mut)">${esc(f.description)}</p></div>
       </div>
       <div class="side"><div class="box" id="buyBox" style="margin-top:8px"></div></div>
     </div>`;
@@ -185,15 +231,18 @@ async function renderDetail(f) {
   renderBuy(f);
 }
 
+const sumBox = f => `<div class="co-sum"><img src="${esc(f.iconUrl)}" alt=""><div><b>${esc(f.name)}</b><span>${f.version ? "v" + esc(f.version) + " · " : ""}${esc(f.sizeText)}</span></div><div class="co-price">৳${esc(f.price)}</div></div>`;
+
 async function renderBuy(f) {
   const box = $("#buyBox");
   if (!user) {
-    box.innerHTML = `<h3>কিনতে চাও?</h3>
-      <ol class="steps"><li>Google দিয়ে Sign in করো</li><li>bKash / Nagad এ টাকা পাঠাও</li><li>Transaction ID দাও</li><li>Approve হলেই ডাউনলোড</li></ol>
-      <button class="btn ok big" id="buyBtn">🛒 Buy it — ৳${esc(f.price)}</button>`;
+    box.innerHTML = `<div class="co"><div class="co-title">🛒 ${esc(T("buyTitle", "কিনতে চাও?"))}</div>${sumBox(f)}
+      <ol class="steps">${L("buySteps", DEF_STEPS).map(s => `<li>${esc(s)}</li>`).join("")}</ol>
+      <button class="btn ok big" id="buyBtn">${esc(T("buyBtnText", "🛒 এখনই কিনুন"))} — ৳${esc(f.price)}</button>
+      <div class="co-note">${esc(T("payNote", "🔒 তোমার তথ্য সুরক্ষিত। Admin যাচাইয়ের পর ডাউনলোড চালু হবে।"))}</div></div>`;
     $("#buyBtn").onclick = login; return;
   }
-  box.innerHTML = "চেক করা হচ্ছে...";
+  box.innerHTML = `<div class="meta">চেক করা হচ্ছে...</div>`;
   const oid = `${user.uid}_${f.id}`;
   let o = null;
   try { const od = await getDoc(doc(db, "orders", oid)); o = od.exists() ? od.data() : null; }
@@ -201,40 +250,49 @@ async function renderBuy(f) {
 
   if (o && o.status === "approved") {
     if (o.downloaded === true) {
-      box.innerHTML = `<span class="badge b-approved">Approved ✔</span><p style="margin:10px 0">এই ফাইল আগেই ডাউনলোড করা হয়েছে। Paid ফাইল তাই আর ডাউনলোড করা যাবে না।</p>`;
+      box.innerHTML = `<div class="stt"><div class="big-i">✅</div><span class="badge b-approved">Approved ✔</span><p>এই ফাইল আগেই ডাউনলোড করা হয়েছে। Paid ফাইল তাই আর ডাউনলোড করা যাবে না।</p></div>`;
       return;
     }
-    box.innerHTML = `<span class="badge b-approved">Approved ✔</span>
-      <p style="margin:10px 0">পেমেন্ট ভেরিফাইড! ⚠ একবারই ডাউনলোড করা যাবে।</p>
-      <button class="btn ok big" id="dlBtn">⬇ Download (একবার)</button>`;
+    box.innerHTML = `<div class="stt"><div class="big-i">🎉</div><span class="badge b-approved">Approved ✔</span>
+      <p>পেমেন্ট ভেরিফাইড! ⚠ একবারই ডাউনলোড করা যাবে।</p>
+      <button class="btn ok big" id="dlBtn">⬇ Download (একবার)</button></div>`;
     $("#dlBtn").onclick = () => downloadOrder({ id: oid, fileId: f.id }, $("#dlBtn"));
     return;
   }
   if (o && o.status === "pending") {
-    box.innerHTML = `<span class="badge b-pending">Pending</span>
-      <p style="margin-top:10px">তোমার TrxID <b>${esc(o.trxId)}</b> যাচাই চলছে। Admin approve করলে এখানেই ডাউনলোড বাটন আসবে।</p>
-      <button class="btn ghost" id="nBtn" style="margin-top:10px">🔔 Approve হলে notification পাও</button>`;
-    if ($("#nBtn")) $("#nBtn").onclick = async () => { toast(await enableNotif() ? "Notification চালু হয়েছে" : "Notification চালু করা যায়নি"); renderBuy(f); };
+    box.innerHTML = `<div class="stt"><div class="big-i">⏳</div><span class="badge b-pending">Pending</span>
+      <p>তোমার TrxID <b style="color:var(--txt)">${esc(o.trxId)}</b> যাচাই চলছে। Admin approve করলে এখানেই ডাউনলোড বাটন আসবে।</p>
+      <button class="btn ghost" id="nBtn">🔔 Approve হলে notification পাও</button></div>`;
+    $("#nBtn").onclick = async () => { toast(await enableNotif() ? "Notification চালু হয়েছে" : "Notification চালু করা যায়নি"); renderBuy(f); };
     return;
   }
   const rej = o && o.status === "rejected"
-    ? `<p><span class="badge b-rejected">Rejected</span> ${esc(o.reason || "")} — সঠিক তথ্য দিয়ে আবার সাবমিট করো।</p>` : "";
+    ? `<p style="margin:8px 0"><span class="badge b-rejected">Rejected</span> ${esc(o.reason || "")} — সঠিক তথ্য দিয়ে আবার সাবমিট করো।</p>` : "";
   const bk = settings.bkash || "—", ng = settings.nagad || "—";
-  box.innerHTML = `${rej}
-    <h3>পেমেন্ট করো — ৳${esc(f.price)}</h3>
-    <div class="pay" style="margin:12px 0">
-      <label><input type="radio" name="m" value="bKash" checked><span>bKash</span></label>
-      <label><input type="radio" name="m" value="Nagad"><span>Nagad</span></label>
+  const logo = (u, ch) => u ? `<img src="${esc(u)}" alt="">` : ch;
+  box.innerHTML = `<div class="co">
+    <div class="co-title">🔒 ${esc(T("payTitle", "সিকিউর চেকআউট"))}</div>
+    ${sumBox(f)}${rej}
+    <div class="co-step"><i>1</i>পেমেন্ট মাধ্যম বেছে নাও</div>
+    <div class="pm">
+      <label class="pm-bk"><input type="radio" name="m" value="bKash" checked><span class="pm-logo">${logo(settings.bkashLogo, "b")}</span>bKash<span class="pm-tick">✓</span></label>
+      <label class="pm-ng"><input type="radio" name="m" value="Nagad"><span class="pm-logo">${logo(settings.nagadLogo, "n")}</span>Nagad<span class="pm-tick">✓</span></label>
     </div>
-    <div id="payInfo" class="meta"></div>
-    <label>তোমার যে নম্বর থেকে পাঠিয়েছ</label>
+    <div class="co-step"><i>2</i>টাকা পাঠাও</div>
+    <div id="payInfo"></div>
+    <div class="co-step"><i>3</i>পেমেন্টের তথ্য দাও</div>
+    <label>${esc(T("senderLabel", "তোমার যে নম্বর থেকে পাঠিয়েছ"))}</label>
     <input id="sender" placeholder="01XXXXXXXXX" inputmode="numeric">
-    <label>Transaction ID (TrxID)</label>
+    <label>${esc(T("trxLabel", "Transaction ID (TrxID)"))}</label>
     <input id="trx" placeholder="যেমন: 8N7A6D5E4F">
-    <button class="btn ok big" id="sub">✔ Submit করো</button>`;
+    <button class="btn ok big" id="sub">${esc(T("submitText", "✔ অর্ডার কনফার্ম করো"))}</button>
+    <div class="co-note">${esc(T("payNote", "🔒 তোমার তথ্য সুরক্ষিত। Admin যাচাইয়ের পর ডাউনলোড চালু হবে।"))}</div></div>`;
   const info = () => {
-    const m = document.querySelector("input[name=m]:checked").value;
-    $("#payInfo").innerHTML = `${m} (Send Money / Personal) নম্বর: <b style="color:#fff;font-size:18px">${esc(m === "bKash" ? bk : ng)}</b><br>উপরের নম্বরে <b>৳${esc(f.price)}</b> পাঠাও, তারপর নিচে Transaction ID দাও।`;
+    const m = document.querySelector("input[name=m]:checked").value, num = m === "bKash" ? bk : ng;
+    const ins = T("payInstruction", "{method} (Send Money / Personal) নম্বরে {price} পাঠাও, তারপর নিচে Transaction ID দাও।").replace(/\{method\}/g, m).replace(/\{price\}/g, "৳" + f.price);
+    $("#payInfo").className = "co-num " + (m === "bKash" ? "bk" : "ng");
+    $("#payInfo").innerHTML = `<div class="co-numrow"><div><small>${esc(m)} নম্বর</small><b>${esc(num)}</b></div><button type="button" class="copy" id="cpy">📋 Copy</button></div><p>${esc(ins)}</p>`;
+    $("#cpy").onclick = () => { try { navigator.clipboard.writeText(num).then(() => toast("নম্বর কপি হয়েছে")).catch(() => toast(num)); } catch { toast(num); } };
   };
   document.querySelectorAll("input[name=m]").forEach(r => r.onchange = info); info();
 
