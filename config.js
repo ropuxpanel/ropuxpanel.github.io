@@ -12,7 +12,7 @@ export const CLOUD_NAME = "trd4esoa";
 export const UPLOAD_PRESET = "ropubd";
 
 // এই ইমেইলগুলো admin হবে (firestore.rules এও একই ইমেইল দিতে হবে)
-export const ADMIN_EMAILS = ["Coyonkhan2738@gmail.com"];
+export const ADMIN_EMAILS = ["coyonkhan2738@gmail.com"];
 
 export const SITE_NAME = "Ropu Panel Zone";
 
