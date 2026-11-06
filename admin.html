@@ -94,7 +94,7 @@
 </div>
 
 <script type="module">
-import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS, NOTIFY_URL } from "./config.js";
+import { firebaseConfig, CLOUD_NAME, UPLOAD_PRESET, ADMIN_EMAILS, NOTIFY_URL, GH_OWNER, GH_REPO } from "./config.js";
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 import { getFirestore, collection, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -255,6 +255,26 @@ function upload(file, onP) {
   });
 }
 
+// ---- GitHub Release upload (background, token browser এ থাকে) ----
+async function uploadGH(file, onP) {
+  let tk = localStorage.getItem("ghToken");
+  if (!tk) { tk = (prompt("GitHub token (Contents: write) দাও — শুধু এই browser এ থাকবে:") || "").trim(); if (!tk) throw new Error("GitHub token লাগবে"); localStorage.setItem("ghToken", tk); }
+  const H = { Authorization: "Bearer " + tk, Accept: "application/vnd.github+json" };
+  const id = crypto.randomUUID(), ext = (file.name.match(/\.[A-Za-z0-9]+$/) || [""])[0];
+  const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/releases`, { method: "POST", headers: H, body: JSON.stringify({ tag_name: "f-" + id, name: "f-" + id }) });
+  const rel = await r.json();
+  if (!r.ok) { if (r.status === 401) localStorage.removeItem("ghToken"); throw new Error("GitHub: " + (rel.message || r.status)); }
+  return new Promise((res, rej) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", `https://uploads.github.com/repos/${GH_OWNER}/${GH_REPO}/releases/${rel.id}/assets?name=${id}${ext}`);
+    x.setRequestHeader("Authorization", H.Authorization); x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = e => e.lengthComputable && onP && onP(e.loaded / e.total);
+    x.onload = () => { let j = {}; try { j = JSON.parse(x.responseText); } catch {} x.status < 300 ? res({ secure_url: j.browser_download_url, public_id: String(rel.id) }) : rej(new Error("GitHub: " + (j.message || x.status))); };
+    x.onerror = () => rej(new Error("network error"));
+    x.send(file);
+  });
+}
+
 $("#publish").onclick = async () => {
   const name = $("#fName").value.trim(), price = Number($("#fPrice").value);
   const file = $("#fFile").files[0], icon = $("#fIcon").files[0], shots = [...$("#fShots").files];
@@ -267,7 +287,7 @@ $("#publish").onclick = async () => {
     const sh = [];
     for (let i = 0; i < shots.length; i++) { $("#stat").textContent = `Screenshot ${i + 1}/${shots.length}...`; sh.push((await upload(shots[i])).secure_url); }
     $("#stat").textContent = "মূল ফাইল আপলোড...";
-    const mf = await upload(file, setBar);
+    const mf = await uploadGH(file, setBar);
     const ref = await addDoc(collection(db, "files"), {
       name, price, description: $("#fDesc").value, version: $("#fVer").value.trim(), category: $("#fCat").value.trim(),
       size: file.size, sizeText: fmtSize(file.size), iconUrl: ic.secure_url, screenshots: sh, createdAt: serverTimestamp()
