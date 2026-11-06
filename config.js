@@ -12,7 +12,7 @@ export const CLOUD_NAME = "trd4esoa";
 export const UPLOAD_PRESET = "ropubd";
 
 // এই ইমেইলগুলো admin হবে (firestore.rules এও একই ইমেইল দিতে হবে)
-export const ADMIN_EMAILS = ["coyonkhan2738@gmail.com"];
+export const ADMIN_EMAILS = ["csm.mohasin@gmail.com", "coyonkhan2738@gmail.com"];
 
 export const SITE_NAME = "Ropu Panel Zone";
 
@@ -21,5 +21,9 @@ export const VAPID_KEY = "BCil0IOTus9IFmpTm4crylv8jYgnehsEBs1FF8MTrA8JQJyVWwaDI0
 // Cloudflare Worker URL (notify-worker.js deploy করার পর বসাও)
 export const NOTIFY_URL = "https://ropu.csm-mohasin.workers.dev/";
 
-// তোমার GitHub Releases পেজ (বড় ফাইল এখানে manually upload করবে)
+// GitHub Release এ বড় ফাইল upload (repo public হতে হবে). Token এখানে দিও না! admin panel এ প্রথমবার চাইবে।
+export const GH_OWNER = "ropuxpanel";
+export const GH_REPO = "files-storage";
+
+// GitHub Releases পেজ (বড় ফাইল এখানে manually upload করবে)
 export const RELEASES_URL = "https://github.com/ropuxpanel/files-storage/releases";
